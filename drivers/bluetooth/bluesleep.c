@@ -590,17 +590,13 @@ static int bluesleep_probe(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_MACH_MSM8992_P1
-	bdev = kzalloc(sizeof(struct bluetooth_pm_device_info), GFP_KERNEL);
-	if (!bdev) {
-		printk("%s: bdev is null  \n", __func__);
-		return -ENOMEM;
-	}
-
-	bdev->gpio_bt_reset = bsi->bt_reset;
-	bdev->gpio_bt_host_wake = bsi->host_wake;
-	bdev->gpio_bt_ext_wake = bsi->ext_wake;
-
-	platform_set_drvdata(pdev, bdev);
+    /* configure bt_reset as output mode*/
+	ret = gpio_request_one(bsi->bt_reset, GPIOF_OUT_INIT_LOW, "bt_reset");
+	if (ret < 0) {
+		BT_ERR("failed to configure output direction for GPIO %d err %d",
+			bsi->bt_reset, ret);
+		goto free_bt_reset;
+    }
 #endif
 
 	/* configure host_wake as input */
@@ -651,6 +647,18 @@ static int bluesleep_probe(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_MACH_MSM8992_P1
+	bdev = kzalloc(sizeof(struct bluetooth_pm_device_info), GFP_KERNEL);
+	if (!bdev) {
+		printk("%s: bdev is null  \n", __func__);
+		return -ENOMEM;
+	}
+
+	bdev->gpio_bt_reset = bsi->bt_reset;
+	bdev->gpio_bt_host_wake = bsi->host_wake;
+	bdev->gpio_bt_ext_wake = bsi->ext_wake;
+
+	platform_set_drvdata(pdev, bdev);
+
 	bluetooth_pm_rfkill_set_power(bdev, default_state);
 
 	bdev->rfk = rfkill_alloc(pdev->name, &pdev->dev, RFKILL_TYPE_BLUETOOTH,
@@ -658,7 +666,7 @@ static int bluesleep_probe(struct platform_device *pdev)
 	if(unlikely(!bdev->rfk)) {
 		pr_err("%s:  failed to alloc rfkill \n", __func__);
 		ret = -ENOMEM;
-		goto free_bt_ext_wake;
+		goto free_bt_reset;
 	}
 
 	rfkill_set_states(bdev->rfk, default_state, false);
@@ -669,12 +677,16 @@ static int bluesleep_probe(struct platform_device *pdev)
 		pr_err("%s:  failed to register rfkill \n", __func__);
 		rfkill_destroy(bdev->rfk);
 		kfree(bdev->rfk);
-		goto free_bt_ext_wake;
+		goto free_bt_reset;
 	}
 	bsi->rfkill = bdev->rfk;
 #endif
 
 	return 0;
+#ifdef CONFIG_MACH_MSM8992_P1
+free_bt_reset:
+	gpio_free(bsi->bt_reset);
+#endif
 free_bt_ext_wake:
 	gpio_free(bsi->ext_wake);
 free_bt_host_wake:
